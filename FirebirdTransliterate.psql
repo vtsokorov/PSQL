@@ -1,0 +1,104 @@
+/*
+*	
+*	Tsokorov V.V. 2014.03.29
+*
+*	
+*/
+-- 1. transliterate algorithm:
+
+create or alter procedure TRANSLIT (SRC_STRING varchar(50))
+returns (RESULT_STRING varchar(50))
+as
+declare variable ENG_CHARS_U varchar(50) = 'ABVHGDEZYYIKLMNOPRSTUFYeZhKhTsChShYuYaYi';
+declare variable ENG_CHARS_L varchar(50) = 'аbvhgdezyiiiklmnoprstufiezhkhtschshiuia';
+declare variable UA_CHARS_U varchar(50) = 'АБВГҐДЕЗИЙІКЛМНОПРСТУФЄЖХЦЧШЮЯЇ';
+declare variable UA_CHARS_L varchar(50) = 'абвгґдезийіїклмнопрстуфєжхцчшюя';
+declare variable CCHAR char(1);
+declare variable PCHAR char(1);
+declare variable CENTER_U integer = 24;
+declare variable CENTER_L integer = 25;
+declare variable ILENGHT integer = 0;
+declare variable JLENGHT integer = 0;
+declare variable I integer = 1;
+declare variable J integer = 1;
+begin
+/*
+ASCII:
+32 - пропел, 45 - Тире(-), 199 - З,  231 - з, 227 - г, 217 - Щ, 249 - щ,  104 - h
+*/
+  RESULT_STRING = _WIN1251 X'';
+  ENG_CHARS_U   = ASCII_CHAR(32) || ASCII_CHAR(45) || ENG_CHARS_U;
+  UA_CHARS_U    = ASCII_CHAR(32) || ASCII_CHAR(45) || UA_CHARS_U;
+  ENG_CHARS_L   = ASCII_CHAR(32) || ASCII_CHAR(45) || ENG_CHARS_L;
+  UA_CHARS_L    = ASCII_CHAR(32) || ASCII_CHAR(45) || UA_CHARS_L;
+  PCHAR         = ASCII_CHAR(35);
+
+   ILENGHT = CHAR_LENGTH(SRC_STRING);
+   WHILE (I <= ILENGHT) DO BEGIN
+    CCHAR = SUBSTRING(SRC_STRING FROM I FOR 1);
+    IF(I = 1  or PCHAR = ASCII_CHAR(32) or  PCHAR = ASCII_CHAR(45)) THEN
+    BEGIN
+        JLENGHT = CHAR_LENGTH(UA_CHARS_U); J = 1;
+        WHILE (J <= JLENGHT) DO BEGIN
+            IF(CCHAR = SUBSTRING(UA_CHARS_U FROM J FOR 1)) THEN
+            BEGIN
+                IF(j <= CENTER_U) THEN
+                    RESULT_STRING = RESULT_STRING || SUBSTRING(ENG_CHARS_U FROM J FOR 1);
+                ELSE
+                    RESULT_STRING = RESULT_STRING || SUBSTRING(ENG_CHARS_U FROM J + (J - CENTER_U) - 1 FOR 2);
+                LEAVE;
+            END
+        J = J + 1;
+        END
+    END
+    IF(I > 1 or PCHAR = ASCII_CHAR(32)) THEN  BEGIN
+        JLENGHT = CHAR_LENGTH(UA_CHARS_L); J = 1;
+        WHILE (J <= JLENGHT) DO BEGIN
+            IF(CCHAR = SUBSTRING(UA_CHARS_L FROM J FOR 1)) THEN
+            BEGIN
+                IF(j <= CENTER_L) THEN
+                    IF((PCHAR = ASCII_CHAR(231) or PCHAR = ASCII_CHAR(199)) and CCHAR = ASCII_CHAR(227)) THEN
+                        RESULT_STRING = RESULT_STRING || SUBSTRING(ENG_CHARS_L FROM J+1 FOR 1) || ASCII_CHAR(104);
+                    ELSE RESULT_STRING = RESULT_STRING || SUBSTRING(ENG_CHARS_L FROM J FOR 1);
+                ELSE
+                    RESULT_STRING = RESULT_STRING || SUBSTRING(ENG_CHARS_L FROM J + (J - CENTER_L) - 1 FOR 2);
+                LEAVE;
+            END
+        J = J + 1;
+        END
+    END
+    IF(CCHAR = ASCII_CHAR(217) or CCHAR = ASCII_CHAR(249)) THEN
+        RESULT_STRING = RESULT_STRING || IIF(CCHAR = ASCII_CHAR(217), 'Shch', 'shch');
+   PCHAR = CCHAR;
+   I = I + 1;
+   END
+  suspend;
+end
+
+-- 2. run procedure:
+
+create or alter procedure RUN_TRANSLIT
+as
+declare variable LASTNAME_UA varchar(50);
+declare variable FIRSTNAME_UA varchar(50);
+declare variable MIDDLENAME_UA varchar(50);
+declare variable LASTNAME_ENG varchar(50);
+declare variable FIRSTNAME_ENG varchar(50);
+declare variable MIDDLENAME_ENG varchar(50);
+begin
+      FOR SELECT LASTNAME, FIRSTNAME, MIDDLENAME FROM ANKETA
+      INTO :LASTNAME_UA, :FIRSTNAME_UA, :MIDDLENAME_UA AS CURSOR ITERATOR DO
+      BEGIN
+            execute procedure translit LASTNAME_UA returning_values(:LASTNAME_ENG);
+            execute procedure translit FIRSTNAME_UA returning_values(:FIRSTNAME_ENG);
+            execute procedure translit MIDDLENAME_UA returning_values(:MIDDLENAME_ENG);
+
+            UPDATE ANKETA T SET T.LASTNAME_EN = :LASTNAME_ENG, T.FIRSTNAME_EN = :FIRSTNAME_ENG, T.MIDDLENAME_EN = :MIDDLENAME_ENG WHERE CURRENT OF ITERATOR;
+            --UPDATE ANKETA T SET T.LASTNAME_EN = '0', T.FIRSTNAME_EN = '0', T.MIDDLENAME_EN = '0' WHERE CURRENT OF ITERATOR;
+      END
+end
+
+-- 3. execute statement:
+
+execute procedure run_translit
+

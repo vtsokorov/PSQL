@@ -1,0 +1,121 @@
+CREATE OR ALTER PROCEDURE DATA_TRANSFER
+RETURNS (
+    SERIYA VARCHAR(50),
+    NOMER VARCHAR(50),
+    BDAY DATE,
+    DOC VARCHAR(100),
+    STID INTEGER)
+AS
+DECLARE VARIABLE CMD VARCHAR(256);
+DECLARE VARIABLE CONT_DOC_TYPE VARCHAR(100);
+DECLARE VARIABLE CONT_DOC VARCHAR(100);
+DECLARE VARIABLE DATE_CREATE DATE;
+DECLARE VARIABLE SUB_DOC_TYPE VARCHAR(10);
+DECLARE VARIABLE DOC_S VARCHAR(10);
+DECLARE VARIABLE DOC_N VARCHAR(10);
+DECLARE VARIABLE P_DOC_S VARCHAR(12);
+DECLARE VARIABLE P_DOC_N VARCHAR(32);
+DECLARE VARIABLE LAST_N VARCHAR(50);
+DECLARE VARIABLE FIRST_N VARCHAR(50);
+DECLARE VARIABLE MIDDLE_N VARCHAR(50);
+DECLARE VARIABLE BIRTH_DAY DATE;
+DECLARE VARIABLE DOC_TYPE INTEGER;
+DECLARE VARIABLE STUD_ID INTEGER;
+DECLARE VARIABLE ST_LEVEL INTEGER;
+DECLARE VARIABLE EDU_ID INTEGER;
+DECLARE VARIABLE LVL_DIPLOM_NAME VARCHAR(128);
+DECLARE VARIABLE LVL_NAME VARCHAR(25);
+DECLARE VARIABLE LVL_ID INTEGER;
+BEGIN
+   CMD = 'SELECT LASTNAME, FIRSTNAME, MIDDLENAME, DOCUMENT_SERIA, DOCUMENT_NUMBER, BIRTHDAY, PREV_DOCUMENT_TYPE_ID, PREV_DOCUMENT_SERIA, PREV_DOCUMENT_NUMBER FROM ANKETA';
+   FOR EXECUTE STATEMENT CMD ON EXTERNAL DATA SOURCE 'localhost:C:\devtools\database\bird_db\DEGREE.GDB'
+   AS USER 'sysdba' PASSWORD 'masterkey' ROLE 'ADMINISTRATOR'
+   INTO :LAST_N, :FIRST_N, :MIDDLE_N, :DOC_S, :DOC_N, :BIRTH_DAY, :DOC_TYPE,  :P_DOC_S, :P_DOC_N
+   DO BEGIN
+
+        CONT_DOC_TYPE = CASE
+            WHEN DOC_TYPE = 1 THEN _WIN1251'Атестат про базову загальну середнью освіту'
+            WHEN DOC_TYPE = 2 THEN _WIN1251'Атестат про повну загальну середню освіту'
+            WHEN DOC_TYPE = 3 THEN _WIN1251'Диплом кваліфікованого роб≥тника чи молодшого спеціаліста'
+            WHEN DOC_TYPE = 4 THEN _WIN1251'Диплом кваліфікованого роб≥тника чи молодшого спеціаліста'
+            WHEN DOC_TYPE = 5 THEN _WIN1251'Диплом молодшого спеціаліста'
+            WHEN DOC_TYPE = 6 THEN _WIN1251'Диплом бакалавра'
+            WHEN DOC_TYPE = 7 THEN _WIN1251'Диплом специалиста'
+            WHEN DOC_TYPE = 8 THEN _WIN1251'Диплом магистра'
+        END;
+
+        SUB_DOC_TYPE = IIF(DOC_TYPE <= 2, SUBSTRING(CONT_DOC_TYPE FROM 1 FOR CHAR_LENGTH(_WIN1251'Атестат')),
+                                          SUBSTRING(CONT_DOC_TYPE FROM 1 FOR CHAR_LENGTH(_WIN1251'Диплом')));
+
+       FOR SELECT STUDENT.ID FROM STUDENT WHERE
+                                             --STUDENT.NAME     = :FIRST_N   and
+                                             --STUDENT.FAMIL    = :LAST_N    and
+                                             --STUDENT.OTCH     = :MIDDLE_N  and
+                                             --STUDENT.D_BIRTH  = :BIRTH_DAY and
+                                             STUDENT.SER_PASP = :DOC_S     and
+                                             STUDENT.N_PASP   = :DOC_N
+                                             INTO :STUD_ID AS CURSOR ITERATOR_I DO
+       BEGIN
+            FOR SELECT T.ID, T.ST_LVL_ID, T.TYP_DOC, T.DATE_VID FROM DOP_OBUCH T WHERE STUD_ID IS NOT NULL AND T.STUD_ID = :STUD_ID
+            INTO :EDU_ID, :ST_LEVEL, :CONT_DOC, :DATE_CREATE AS CURSOR ITERATOR_J DO
+            BEGIN
+                SELECT LVL.NAME, LVL.DIPLOM_NAME FROM ST_LEVELS LVL WHERE LVL.ID = :ST_LEVEL INTO LVL_NAME, LVL_DIPLOM_NAME;
+                IF(LVL_DIPLOM_NAME = CONT_DOC_TYPE) THEN
+                BEGIN
+                    UPDATE DOP_OBUCH T SET T.OBR_ZAV  = _WIN1251'нема даних',
+                                           T.IS_OKON  = 'T',
+                                           T.TYP_DOC  = :SUB_DOC_TYPE,
+                                           T.SER_DOC  = :P_DOC_S,
+                                           T.N_DIPLOM = :P_DOC_N
+                                       WHERE CURRENT OF ITERATOR_J;
+                END
+                ELSE BEGIN
+                    IF(CONT_DOC = _WIN1251'Диплом' AND DATE_CREATE IS NULL) THEN
+                    UPDATE DOP_OBUCH T SET T.OBR_ZAV            = _WIN1251'нема даних',
+                                           T.DATE_VID           = '25.6.2014',
+                                           T.DATE_GOS_KOMISSIYA = '25.6.2014'
+                                       WHERE CURRENT OF ITERATOR_J;
+                    ELSE IF(CONT_DOC = '') THEN BEGIN
+                        LVL_ID = CASE
+                        WHEN CONT_DOC_TYPE = _WIN1251'Атестат про базову загальну середнью освіту'               THEN 15
+                        WHEN CONT_DOC_TYPE = _WIN1251'Атестат про повну загальну середню освіту'                 THEN 18
+                        WHEN CONT_DOC_TYPE = _WIN1251'Диплом кваліфікованого робітника чи молодшого спеціаліста' THEN 16
+                        WHEN CONT_DOC_TYPE = _WIN1251'Диплом кваліфікованого робітника чи молодшого спеціаліста' THEN 16
+                        WHEN CONT_DOC_TYPE = _WIN1251'Диплом молодшого спец≥ал≥ста'                              THEN 1
+                        WHEN CONT_DOC_TYPE = _WIN1251'Диплом бакалавра'                                          THEN 2
+                        WHEN CONT_DOC_TYPE = _WIN1251'Диплом спеціаліста'                                        THEN 3
+                        WHEN CONT_DOC_TYPE = _WIN1251'Диплом магістра'                                           THEN 4
+                                END;
+                        UPDATE DOP_OBUCH T SET T.OBR_ZAV   = _WIN1251'нема даних',
+                                            T.ST_LVL_ID = :LVL_ID,
+                                            T.IS_OKON   = 'T',
+                                            T.TYP_DOC   = :SUB_DOC_TYPE,
+                                            T.SER_DOC   = :P_DOC_S,
+                                            T.N_DIPLOM  = :P_DOC_N
+                                           WHERE CURRENT OF ITERATOR_J;
+                    END
+                END
+                    SERIYA = :P_DOC_S; NOMER = :P_DOC_N; BDAY = :BIRTH_DAY; DOC = :CONT_DOC_TYPE; STID = :STUD_ID;
+                    SUSPEND;
+            END
+      END
+   END
+END
+
+
+/*
+-------------------------------------------------------------------------------------------------------
+CONT_DOC_TYPE = CASE
+    WHEN DOC_TYPE = 1 THEN _WIN1251'—в≥доцтво про базову загальну середню осв≥ту'
+    WHEN DOC_TYPE = 2 THEN _WIN1251'јтестат про повну загальну середню осв≥ту'
+    WHEN DOC_TYPE = 3 THEN _WIN1251'ƒиплом квал≥ф≥кованого роб≥тника'
+    WHEN DOC_TYPE = 4 THEN _WIN1251'ƒиплом квал≥ф≥кованого роб≥тника на баз≥ середньоњ осв≥ти'
+    WHEN DOC_TYPE = 5 THEN _WIN1251'ƒиплом молодшого спец≥ал≥ста'
+    WHEN DOC_TYPE = 6 THEN _WIN1251'ƒиплом бакалавра'
+    WHEN DOC_TYPE = 7 THEN _WIN1251'ƒиплом спец≥ал≥ста'
+    WHEN DOC_TYPE = 8 THEN _WIN1251'ƒиплом маг≥стра'
+END;
+
+
+--------------------------------------------------------------------------------------------------------
+*/
